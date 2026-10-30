@@ -1,0 +1,161 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: grandvista-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql-data:/var/lib/mysql
+    networks:
+      - grandvista-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  eureka-server:
+    build:
+      context: ./eureka-server
+      dockerfile: Dockerfile
+    container_name: grandvista-eureka
+    restart: on-failure
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+    networks:
+      - grandvista-net
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: grandvista-auth
+    restart: on-failure
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=jdbc:mysql://mysql:3306/grandvista_auth?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - EUREKA_SERVER_URL=http://eureka-server:8761/eureka/
+      - JWT_SECRET=grandvista-jwt-secret-key-super-secure-grand-vista-2026-key-32bytes
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - grandvista-net
+
+  room-service:
+    build:
+      context: ./room-service
+      dockerfile: Dockerfile
+    container_name: grandvista-room
+    restart: on-failure
+    ports:
+      - "8082:8082"
+    environment:
+      - DATABASE_URL=jdbc:mysql://mysql:3306/grandvista_rooms?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - EUREKA_SERVER_URL=http://eureka-server:8761/eureka/
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - grandvista-net
+
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: grandvista-payment
+    restart: on-failure
+    ports:
+      - "8084:8084"
+    environment:
+      - DATABASE_URL=jdbc:mysql://mysql:3306/grandvista_payments?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - EUREKA_SERVER_URL=http://eureka-server:8761/eureka/
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - grandvista-net
+
+  booking-service:
+    build:
+      context: ./booking-service
+      dockerfile: Dockerfile
+    container_name: grandvista-booking
+    restart: on-failure
+    ports:
+      - "8083:8083"
+    environment:
+      - DATABASE_URL=jdbc:mysql://mysql:3306/grandvista_bookings?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - EUREKA_SERVER_URL=http://eureka-server:8761/eureka/
+      - ROOM_SERVICE_URL=http://room-service:8082
+      - PAYMENT_SERVICE_URL=http://payment-service:8084
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      room-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+    networks:
+      - grandvista-net
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: grandvista-gateway
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_SERVER_URL=http://eureka-server:8761/eureka/
+      - JWT_SECRET=grandvista-jwt-secret-key-super-secure-grand-vista-2026-key-32bytes
+    depends_on:
+      - eureka-server
+    networks:
+      - grandvista-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: grandvista-frontend
+    restart: on-failure
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - grandvista-net
+
+networks:
+  grandvista-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
